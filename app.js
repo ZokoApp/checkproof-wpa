@@ -40,11 +40,11 @@ const statusEl = document.getElementById('status');
 const queueCountEl = document.getElementById('queueCount');
 
 let lastCapture = null; // { id, blob, meta }
-let currentAddress = { line1: '—', line2: '' }; // line1 = "Calle 123", line2 = "Ciudad – Provincia"
+let currentAddress = { line1: '—', line2: '' }; // "Calle 123", "Ciudad – Provincia"
 let currentCoords = null;
 
 // =======================
-// Branding / Marca de agua (opcional)
+// Branding / Marca de agua
 // =======================
 const BRAND_KEY = 'cpBrand';
 const DEFAULT_BRAND = 'CheckProof';
@@ -54,7 +54,7 @@ try {
   const params = new URLSearchParams(location.search);
   const b = params.get('brand');
   if (b) { BRAND = b; localStorage.setItem(BRAND_KEY, b); }
-  if (params.get('wm') === '0') WM_ENABLED = false; // ?wm=0 para ocultar
+  if (params.get('wm') === '0') WM_ENABLED = false; // ?wm=0 para ocultar watermark
 } catch {}
 
 // =======================
@@ -106,12 +106,23 @@ async function updateQueueCount() {
 }
 
 // =======================
-// Tiempo y geocoding
+// Utilidades: tiempo, carga de scripts y geocoding
 // =======================
 function getNowStr() {
   const d = new Date();
   const pad = n => String(n).padStart(2,'0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('No se pudo cargar: ' + src));
+    document.head.appendChild(s);
+  });
 }
 
 // Dirección exacta: "Calle 123" y "Ciudad – Provincia". Fallbacks si faltan datos.
@@ -166,7 +177,7 @@ btnOpenCam?.addEventListener('click', async () => {
 });
 
 // =======================
-// Dibujo: helpers
+// Dibujo: helpers (wrap + watermark + QR)
 // =======================
 function measureLines(ctx, text, maxWidth) {
   const words = String(text || '').split(' ');
@@ -184,7 +195,6 @@ function measureLines(ctx, text, maxWidth) {
   if (line) lines.push(line);
   return lines;
 }
-
 function drawWatermarkSmall(ctx, canvas, text) {
   if (!WM_ENABLED) return;
   ctx.save();
@@ -198,6 +208,9 @@ function drawWatermarkSmall(ctx, canvas, text) {
   ctx.restore();
 }
 
+// =======================
+// Tomar foto (dibujo completo + QR Maps)
+// =======================
 btnShot?.addEventListener('click', async () => {
   if (!video.videoWidth) return;
 
@@ -211,13 +224,30 @@ btnShot?.addEventListener('click', async () => {
   // Marca de agua pequeña (esquina inferior izquierda)
   drawWatermarkSmall(ctx, canvas, BRAND);
 
+  // QR a Google Maps (si hay coords)
+  let mapsUrl = null;
+  if (currentCoords) {
+    const lat = currentCoords.latitude;
+    const lon = currentCoords.longitude;
+    mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+    try {
+      // Cargamos librería QR una única vez
+      await loadScriptOnce('https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js');
+      // Generamos QR a 110px
+      const qrCanvas = document.createElement('canvas');
+      await window.QRCode.toCanvas(qrCanvas, mapsUrl, { width: 110, margin: 0 });
+      // Pegamos QR en la esquina inferior izquierda (encima del watermark)
+      const outerPad = 18;
+      ctx.drawImage(qrCanvas, outerPad, canvas.height - (110 + outerPad + 6));
+    } catch {}
+  }
+
   // ==== Sello compacto: esquina inferior derecha ====
   const addr1 = currentAddress?.line1 || 'Dirección no disponible';
   const addr2 = currentAddress?.line2 || '';
   const stampDate = getNowStr();
   if (tsEl) tsEl.textContent = stampDate;
 
-  // Estética
   ctx.save();
   ctx.font = '28px monospace';
   ctx.textBaseline = 'alphabetic';
@@ -225,19 +255,18 @@ btnShot?.addEventListener('click', async () => {
   const innerPad = 16;
   const lineH = 32;
 
-  // Ancho máximo del panel (para que no tape la foto): 60% del ancho
-  const maxPanelWidth = Math.floor(canvas.width * 0.60);
+  // Permitimos hasta 80% del ancho para envolver texto
+  const maxTextWidth = Math.floor(canvas.width * 0.80);
+  // Generamos líneas envueltas
+  const lines1 = measureLines(ctx, addr1, maxTextWidth);
+  const lines2 = addr2 ? measureLines(ctx, addr2, maxTextWidth) : [];
+  const lines3 = [stampDate];
+  const allLines = [...lines1, ...lines2, ...lines3];
 
-  // Calculamos líneas con ajuste de palabra
-  const textMaxWidth = maxPanelWidth - innerPad * 2;
-  const lines1 = measureLines(ctx, addr1, textMaxWidth);
-  const lines2 = addr2 ? measureLines(ctx, addr2, textMaxWidth) : [];
-  const allLines = [...lines1, ...lines2, stampDate];
-
-  // Panel: el ancho es el máximo largo de línea (+ padding)
+  // Dimensiones del panel según línea más larga
   const longest = allLines.reduce((m, t) => Math.max(m, ctx.measureText(t).width), 0);
-  const boxW = Math.min(maxPanelWidth, Math.ceil(longest) + innerPad * 2);
-  const boxH = innerPad * 2 + (lines1.length + lines2.length + 1) * lineH;
+  const boxW = Math.ceil(Math.min(maxTextWidth, longest)) + innerPad * 2;
+  const boxH = innerPad * 2 + allLines.length * lineH;
 
   // Posición: esquina inferior derecha
   const x = canvas.width - boxW - outerPad;
@@ -247,15 +276,12 @@ btnShot?.addEventListener('click', async () => {
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(x, y, boxW, boxH);
 
-  // Texto (blanco)
+  // Texto
   ctx.fillStyle = '#ffffff';
   let yy = y + innerPad + lineH;
   const startX = x + innerPad;
-  const drawLines = (arr) => {
-    for (const l of arr) { ctx.fillText(l, startX, yy); yy += lineH; }
-  };
-  drawLines(lines1);
-  drawLines(lines2);
+  for (const l of lines1) { ctx.fillText(l, startX, yy); yy += lineH; }
+  for (const l of lines2) { ctx.fillText(l, startX, yy); yy += lineH; }
   ctx.fillText(stampDate, startX, yy);
 
   ctx.restore();
@@ -270,6 +296,7 @@ btnShot?.addEventListener('click', async () => {
     meta: {
       address: [addr1, addr2].filter(Boolean).join(' — '),
       coords: currentCoords || null,
+      mapsUrl, // lo guardamos también en Firestore
       deviceTs: new Date().toISOString(),
       brand: BRAND
     }
@@ -281,7 +308,6 @@ btnShot?.addEventListener('click', async () => {
 // =======================
 // Firebase (Auth anónima + Storage + Firestore + Analytics)
 // =======================
-// Tus credenciales (cámbialas si me pasás las nuevas)
 const firebaseConfig = {
   apiKey: "AIzaSyCphpvQZbzwxvKYHAhi-fIRzeNqtWBdeBY",
   authDomain: "hobby-app-4a267.firebaseapp.com",
@@ -293,6 +319,7 @@ const firebaseConfig = {
   measurementId: "G-5Y90FXVH42"
 };
 
+// Import ESM directo
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -329,6 +356,7 @@ async function uploadEvidence({ id, blob, meta }) {
     path,
     address: meta.address || null,
     coords: meta.coords || null,
+    mapsUrl: meta.mapsUrl || null,
     deviceTs: meta.deviceTs,
     serverTs: serverTimestamp(),
     brand: meta.brand || null,
@@ -367,7 +395,7 @@ async function retryQueue() {
       await uploadEvidence(item);
       await clearItem(item.id);
     } catch {
-      //   si falla, queda en cola
+      // si falla, queda en cola
     }
   }
   if (statusEl) statusEl.textContent = 'Reintentos finalizados';
@@ -377,3 +405,4 @@ async function retryQueue() {
 btnRetry?.addEventListener('click', retryQueue);
 window.addEventListener('online', retryQueue);
 updateQueueCount();
+
