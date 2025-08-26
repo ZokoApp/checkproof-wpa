@@ -3,56 +3,104 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>CheckProof</title>
+  <title>CheckProof — WPA</title>
+
+  <!-- PWA -->
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#111111" />
-  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#111" />
+  <link rel="icon" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <style>
+    :root{color-scheme:light dark}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;background:#0e0f10;color:#f3f3f3}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:#141517;border-bottom:1px solid #222}
+    h1{font-size:18px;margin:0}
+    .muted{opacity:.7;font-size:.95rem}
+    main{max-width:980px;margin:20px auto;padding:0 16px}
+    .card{background:#15171a;border:1px solid #222;border-radius:12px;padding:16px}
+    .row{display:flex;gap:10px;align-items:center}
+    input,button{font:inherit}
+    input{background:#0f1012;color:#f3f3f3;border:1px solid #2a2d31;border-radius:10px;padding:10px 12px}
+    button{background:#2b6ef3;border:none;border-radius:10px;color:#fff;padding:10px 14px;cursor:pointer}
+    button[disabled]{opacity:.6;cursor:not-allowed}
+    #canvas{width:100%;height:auto;border-radius:10px;border:1px solid #222;background:#0a0b0c}
+    #video{width:100%;max-height:60vh;background:#000;border-radius:10px}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media(min-width:860px){.grid{grid-template-columns:1.1fr .9fr}}
+    .pill{display:inline-block;border:1px solid #2a2d31;border-radius:999px;padding:6px 10px;font-size:.95rem}
+    footer{max-width:980px;margin:20px auto;padding:0 16px;opacity:.7;font-size:.9rem}
+    .sep{height:1px;background:#222;margin:12px 0}
+    .right{display:flex;gap:10px;align-items:center}
+  </style>
 </head>
 <body>
+
   <header>
-    <h1>CheckProof</h1>
-    <button id="btnInstall" hidden>Instalar</button>
+    <h1>CheckProof — WPA</h1>
+    <div class="right">
+      <span id="queueCount" class="pill">Pendientes: 0</span>
+      <button id="btnInstall" hidden>Instalar</button>
+    </div>
   </header>
 
+  <!-- Acceso por CÓDIGO (bloquea hasta validar) -->
+  <section id="codeGate" class="card" style="margin:16px auto;max-width:860px">
+    <h2 style="margin-top:0">Acceso con código</h2>
+
+    <div id="whenLocked">
+      <div class="row" style="flex-wrap:wrap">
+        <input id="codeInput" placeholder="Ingresá tu código (ej: ZOKO-8421-AB12)" style="min-width:260px" />
+        <button id="btnCodeEnter" type="button">Ingresar</button>
+      </div>
+      <p class="muted" style="margin-top:8px">Solo personal autorizado (pedí el código a la empresa).</p>
+    </div>
+
+    <div id="whenUnlocked" style="display:none">
+      <p class="muted">Autorizado como <strong id="operatorLabel">—</strong> — Empresa: <strong id="tenantOut">—</strong></p>
+      <button id="btnCodeLogout" type="button">Cerrar sesión</button>
+    </div>
+  </section>
+
   <main>
-    <section class="card">
-      <h2>Evidencia fotográfica</h2>
+    <div class="grid">
+      <!-- Lado izquierdo: previa de cámara / foto -->
+      <section class="card">
+        <h2 style="margin-top:0">Captura</h2>
+        <div class="row" style="flex-wrap:wrap;margin-bottom:10px">
+          <button id="btnOpenCam" type="button">Abrir cámara</button>
+          <button id="btnShot" type="button" disabled>Tomar foto</button>
+          <button id="btnUpload" type="button" disabled>Subir evidencia</button>
+          <button id="btnRetry" type="button">Reintentar envíos</button>
+        </div>
 
-      <div class="cam">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas" class="hide"></canvas>
-      </div>
+        <video id="video" autoplay playsinline muted></video>
+        <div class="sep"></div>
+        <canvas id="canvas"></canvas>
+      </section>
 
-      <div class="row">
-        <button id="btnOpenCam">Abrir cámara</button>
-        <button id="btnShot" disabled>Tomar foto</button>
-      </div>
-
-      <div class="info">
-        <p><strong>Dirección:</strong> <span id="addr">—</span></p>
-        <p><strong>Fecha/Hora:</strong> <span id="ts">—</span></p>
-        <p><strong>Coords:</strong> <span id="coords">—</span></p>
-        <p class="muted">La imagen se sube directo a la nube con sello de dirección y hora (no se muestra galería al usuario).</p>
-      </div>
-
-      <div class="row">
-        <button id="btnUpload" disabled>Subir evidencia</button>
-        <span id="status" class="status">Listo</span>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Cola sin conexión</h2>
-      <p id="queueCount">Pendientes: 0</p>
-      <button id="btnRetry">Reintentar envío</button>
-    </section>
+      <!-- Lado derecho: info, estado, ubicación -->
+      <section class="card">
+        <h2 style="margin-top:0">Detalle</h2>
+        <p class="muted" id="status">Iniciá sesión con un código para usar la cámara y subir evidencias</p>
+        <div style="display:grid;gap:8px">
+          <div><strong>Dirección</strong><br><span id="addr">—</span></div>
+          <div><strong>Fecha/Hora</strong><br><span id="ts">—</span></div>
+          <div><strong>Coordenadas</strong><br><span id="coords">—</span></div>
+        </div>
+        <div class="sep"></div>
+        <p class="muted">Tip: podés personalizar la marca de agua con <code>?brand=MiEmpresa</code> o desactivarla con <code>?wm=0</code>.</p>
+      </section>
+    </div>
   </main>
 
   <footer>
-    <small>© CheckProof</small>
+    <p>Funciona offline con cola de envíos. Al reconectar, “Reintentar envíos” sube lo pendiente.</p>
   </footer>
 
+  <!-- Tu lógica principal (ESM) -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
+
