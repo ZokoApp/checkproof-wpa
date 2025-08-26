@@ -377,5 +377,3 @@ async function retryQueue() {
 btnRetry?.addEventListener('click', retryQueue);
 window.addEventListener('online', retryQueue);
 updateQueueCount();
-
-
