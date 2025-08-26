@@ -65,7 +65,7 @@
 
   <main>
     <div class="grid">
-      <!-- Lado izquierdo: previa de cámara / foto -->
+      <!-- Izquierda: cámara / foto -->
       <section class="card">
         <h2 style="margin-top:0">Captura</h2>
         <div class="row" style="flex-wrap:wrap;margin-bottom:10px">
@@ -80,7 +80,7 @@
         <canvas id="canvas"></canvas>
       </section>
 
-      <!-- Lado derecho: info, estado, ubicación -->
+      <!-- Derecha: info -->
       <section class="card">
         <h2 style="margin-top:0">Detalle</h2>
         <p class="muted" id="status">Iniciá sesión con un código para usar la cámara y subir evidencias</p>
@@ -90,7 +90,7 @@
           <div><strong>Coordenadas</strong><br><span id="coords">—</span></div>
         </div>
         <div class="sep"></div>
-        <p class="muted">Tip: podés personalizar la marca de agua con <code>?brand=MiEmpresa</code> o desactivarla con <code>?wm=0</code>.</p>
+        <p class="muted">Tip: personalizá la marca de agua con <code>?brand=MiEmpresa</code> o desactivala con <code>?wm=0</code>.</p>
       </section>
     </div>
   </main>
@@ -99,7 +99,7 @@
     <p>Funciona offline con cola de envíos. Al reconectar, “Reintentar envíos” sube lo pendiente.</p>
   </footer>
 
-  <!-- Tu lógica principal (ESM) -->
+  <!-- Lógica principal -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
