@@ -40,8 +40,21 @@ const statusEl = document.getElementById('status');
 const queueCountEl = document.getElementById('queueCount');
 
 let lastCapture = null; // { id, blob, meta }
-let currentAddress = '—';
+let currentAddress = { line1: '—', line2: '' };
 let currentCoords = null;
+
+// =======================
+// Marca de agua / Branding
+// =======================
+const BRAND_KEY = 'cpBrand';
+const DEFAULT_BRAND = 'CheckProof';
+let BRAND = localStorage.getItem(BRAND_KEY) || DEFAULT_BRAND;
+// Permite setear por URL: ?brand=MiEmpresa
+try {
+  const params = new URLSearchParams(location.search);
+  const b = params.get('brand');
+  if (b) { BRAND = b; localStorage.setItem(BRAND_KEY, b); }
+} catch {}
 
 // =======================
 // IndexedDB (cola offline)
@@ -92,27 +105,39 @@ async function updateQueueCount() {
 }
 
 // =======================
-// Geolocalización + Reverse Geocoding (Nominatim)
+// Utilidades de tiempo / geocoding
 // =======================
 function getNowStr() {
   const d = new Date();
   const pad = n => String(n).padStart(2,'0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+
 async function getAddressFromCoords(lat, lon) {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`;
     const resp = await fetch(url, { headers: { 'Accept-Language': 'es-AR' } });
     const data = await resp.json();
     const a = data.address || {};
-    const line = [
-      [a.road, a.house_number].filter(Boolean).join(' '),
-      a.city || a.town || a.village || a.suburb,
-      a.state
-    ].filter(Boolean).join(' - ');
-    return line || data.display_name || `lat:${lat}, lon:${lon}`;
+
+    // Componentes detallados
+    const calleNum = [a.road, a.house_number].filter(Boolean).join(' ');
+    const barrio = a.neighbourhood || a.suburb;
+    const ciudad = a.city || a.town || a.village || a.hamlet;
+    const provincia = a.state;
+    const cp = a.postcode;
+    const pais = a.country;
+
+    const line1 = [calleNum, barrio].filter(Boolean).join(', ') || data.display_name || `lat:${lat}, lon:${lon}`;
+    const line2 = [
+      [ciudad, provincia].filter(Boolean).join(' – '),
+      cp,
+      pais
+    ].filter(Boolean).join(' · ');
+
+    return { line1, line2 };
   } catch {
-    return `lat:${lat}, lon:${lon}`;
+    return { line1: `lat:${lat}, lon:${lon}`, line2: '' };
   }
 }
 
@@ -134,11 +159,13 @@ btnOpenCam?.addEventListener('click', async () => {
       const { latitude, longitude } = pos.coords;
       currentCoords = { latitude, longitude };
       if (coordsEl) coordsEl.textContent = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-      currentAddress = await getAddressFromCoords(latitude, longitude);
-      if (addrEl) addrEl.textContent = currentAddress;
+      const addr = await getAddressFromCoords(latitude, longitude);
+      currentAddress = addr; // { line1, line2 }
+      if (addrEl) addrEl.textContent = [addr.line1, addr.line2].filter(Boolean).join(' — ');
       if (tsEl) tsEl.textContent = getNowStr();
     }, () => {
       if (coordsEl) coordsEl.textContent = 'Permiso rechazado';
+      currentAddress = { line1: '—', line2: '' };
       if (addrEl) addrEl.textContent = '—';
     }, { enableHighAccuracy: true, timeout: 10000 });
   } catch {
@@ -146,36 +173,87 @@ btnOpenCam?.addEventListener('click', async () => {
   }
 });
 
+// =======================
+// Dibujo: helpers (wrapping + watermark)
+// =======================
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = String(text || '').split(' ');
+  let line = '';
+  let yy = y;
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line ? line + ' ' + words[n] : words[n];
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && n > 0) {
+      ctx.fillText(line, x, yy);
+      line = words[n];
+      yy += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) ctx.fillText(line, x, yy);
+  return yy;
+}
+
+function drawBrandWatermark(ctx, canvas, text) {
+  ctx.save();
+  ctx.translate(canvas.width/2, canvas.height/2);
+  ctx.rotate(-Math.PI / 6); // ~ -30°
+  ctx.globalAlpha = 0.15;
+  const fontSize = Math.max(36, Math.floor(canvas.width / 12));
+  ctx.font = `${fontSize}px monospace`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
 btnShot?.addEventListener('click', async () => {
   if (!video.videoWidth) return;
+
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
+
+  // Foto
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  const stamp1 = currentAddress || 'Dirección no disponible';
-  const stamp2 = getNowStr();
-  if (tsEl) tsEl.textContent = stamp2;
+  // Marca de agua diagonal
+  drawBrandWatermark(ctx, canvas, BRAND);
+
+  // Sello con dirección (multi-línea) + fecha
+  const addr1 = currentAddress?.line1 || 'Dirección no disponible';
+  const addr2 = currentAddress?.line2 || '';
+  const stampDate = getNowStr();
+  if (tsEl) tsEl.textContent = stampDate;
 
   const pad = 20;
-  const lineH = 36;
+  const maxWidth = canvas.width - pad*2;
   ctx.save();
   ctx.font = '28px monospace';
-  ctx.textBaseline = 'bottom';
-  const maxWidth = canvas.width - pad*2;
-  const m1 = Math.min(ctx.measureText(stamp1).width, maxWidth);
-  const m2 = Math.min(ctx.measureText(stamp2).width, maxWidth);
-  const boxW = Math.max(m1, m2) + pad*2;
-  const boxH = lineH*2 + pad*2;
+  ctx.textBaseline = 'alphabetic';
+
+  const lineH = 34;
+  const estLines = (t) => Math.max(1, Math.ceil(ctx.measureText(String(t)).width / (maxWidth - pad*2)));
+  let neededLines = estLines(addr1) + (addr2 ? estLines(addr2) : 0) + 1; // +1 fecha
+
+  const boxH = pad*2 + neededLines*lineH;
+  const boxW = canvas.width - pad*2;
   const x = pad;
   const y = canvas.height - boxH - pad;
 
+  // Fondo semi-transparente
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(x, y, boxW, boxH);
 
+  // Texto
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(stamp1, x + pad, y + pad + lineH - 8);
-  ctx.fillText(stamp2, x + pad, y + pad + lineH*2 - 8);
+  let yy = y + pad + lineH;
+  yy = drawWrappedText(ctx, addr1, x + pad, yy, boxW - pad*2, lineH) + lineH;
+  if (addr2) yy = drawWrappedText(ctx, addr2, x + pad, yy, boxW - pad*2, lineH) + lineH;
+  ctx.fillText(stampDate, x + pad, yy);
+
   ctx.restore();
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
@@ -185,9 +263,10 @@ btnShot?.addEventListener('click', async () => {
     id: crypto.randomUUID(),
     blob,
     meta: {
-      address: currentAddress || null,
+      address: [addr1, addr2].filter(Boolean).join(' — '),
       coords: currentCoords || null,
-      deviceTs: new Date().toISOString()
+      deviceTs: new Date().toISOString(),
+      brand: BRAND
     }
   };
   if (statusEl) statusEl.textContent = 'Foto lista para subir';
@@ -197,6 +276,7 @@ btnShot?.addEventListener('click', async () => {
 // =======================
 // Firebase (Auth anónima + Storage + Firestore + Analytics)
 // =======================
+// Tus credenciales (las que veníamos usando)
 const firebaseConfig = {
   apiKey: "AIzaSyCphpvQZbzwxvKYHAhi-fIRzeNqtWBdeBY",
   authDomain: "hobby-app-4a267.firebaseapp.com",
@@ -208,6 +288,7 @@ const firebaseConfig = {
   measurementId: "G-5Y90FXVH42"
 };
 
+// Import ESM directo
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -229,8 +310,12 @@ onAuthStateChanged(auth, (user) => {
   uid = user?.uid || null;
 });
 
+// =======================
+// Subida (online) + Cola (offline)
+// =======================
 async function uploadEvidence({ id, blob, meta }) {
   if (!uid) throw new Error('Sin UID (auth no lista)');
+
   const path = `evidences/${uid}/${Date.now()}_${id}.jpg`;
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
@@ -242,6 +327,7 @@ async function uploadEvidence({ id, blob, meta }) {
     coords: meta.coords || null,
     deviceTs: meta.deviceTs,
     serverTs: serverTimestamp(),
+    brand: meta.brand || null,
     clientAgent: navigator.userAgent
   });
 }
@@ -259,9 +345,9 @@ btnUpload?.addEventListener('click', async () => {
       if (statusEl) statusEl.textContent = 'Sin conexión: agregado a la cola';
     }
     lastCapture = null;
-  } catch {
+  } catch (e) {
     await addToQueue(item);
-    if (statusEl) statusEl.textContent = 'Error subiendo: guardado en cola';
+    if (statusEl) statusEl.textContent = 'Error subiendo: ' + (e?.message || 'guardado en cola');
   } finally {
     await updateQueueCount();
   }
@@ -276,7 +362,9 @@ async function retryQueue() {
     try {
       await uploadEvidence(item);
       await clearItem(item.id);
-    } catch {}
+    } catch {
+      // si falla, queda en cola
+    }
   }
   if (statusEl) statusEl.textContent = 'Reintentos finalizados';
   await updateQueueCount();
@@ -285,3 +373,4 @@ async function retryQueue() {
 btnRetry?.addEventListener('click', retryQueue);
 window.addEventListener('online', retryQueue);
 updateQueueCount();
+
