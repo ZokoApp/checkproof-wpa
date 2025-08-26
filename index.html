@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>CheckProof</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#111111" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+</head>
+<body>
+  <header>
+    <h1>CheckProof</h1>
+    <button id="btnInstall" hidden>Instalar</button>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Evidencia fotográfica</h2>
+
+      <div class="cam">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" class="hide"></canvas>
+      </div>
+
+      <div class="row">
+        <button id="btnOpenCam">Abrir cámara</button>
+        <button id="btnShot" disabled>Tomar foto</button>
+      </div>
+
+      <div class="info">
+        <p><strong>Dirección:</strong> <span id="addr">—</span></p>
+        <p><strong>Fecha/Hora:</strong> <span id="ts">—</span></p>
+        <p><strong>Coords:</strong> <span id="coords">—</span></p>
+        <p class="muted">La imagen se sube directo a la nube con sello de dirección y hora (no se muestra galería al usuario).</p>
+      </div>
+
+      <div class="row">
+        <button id="btnUpload" disabled>Subir evidencia</button>
+        <span id="status" class="status">Listo</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Cola sin conexión</h2>
+      <p id="queueCount">Pendientes: 0</p>
+      <button id="btnRetry">Reintentar envío</button>
+    </section>
+  </main>
+
+  <footer>
+    <small>© CheckProof</small>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
