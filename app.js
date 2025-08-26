@@ -367,7 +367,7 @@ async function retryQueue() {
       await uploadEvidence(item);
       await clearItem(item.id);
     } catch {
-      // si falla, queda en cola
+      //   si falla, queda en cola
     }
   }
   if (statusEl) statusEl.textContent = 'Reintentos finalizados';
